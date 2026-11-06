@@ -1,0 +1,45 @@
+# --- Terraform ---
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+*.tfplan
+tfplan
+# Variable files may contain sensitive values; commit only examples
+*.tfvars
+*.tfvars.json
+!*.example.tfvars
+# Note: .terraform.lock.hcl MUST be committed (pins provider versions)
+
+# --- Secrets and local environment ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# --- Build artifacts ---
+dist/
+build/
+*.zip
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.coverage
+
+# --- Node.js ---
+node_modules/
+
+# --- OS / IDE ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
