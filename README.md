@@ -34,7 +34,9 @@ A user transfers money between two fictitious accounts:
   - [x] Repository with protected `main` branch and pull-request workflow
   - [x] Reproducible development environment (dev container)
   - [x] Multi-account setup, IAM Identity Center, MFA, cost budget ([ADR-0002](docs/adr/0002-aws-account-structure-and-access-management.md))
-  - [ ] Terraform remote state
+  - [x] Terraform remote state in S3 and GitHub Actions authentication with OIDC ([ADR-0003](docs/adr/0003-terraform-state-and-pipeline-authentication.md))
+  - [ ] CI pipeline: `terraform plan` on every pull request
+  - [ ] CD pipeline: manual `terraform apply`
 - [ ] **Phase 1** — Synchronous API (API Gateway, Lambda, DynamoDB, Cognito), CI/CD
 - [ ] **Phase 2** — Transfer Saga with compensation (Step Functions), idempotency
 - [ ] **Phase 3** — Event-driven communication (EventBridge, SQS, DLQ, outbox)
@@ -51,6 +53,7 @@ Architecture Decision Records:
 |---|---|
 | [0001](docs/adr/0001-use-terraform-for-infrastructure-as-code.md) | Use Terraform for Infrastructure as Code |
 | [0002](docs/adr/0002-aws-account-structure-and-access-management.md) | AWS account structure and access management |
+| [0003](docs/adr/0003-terraform-state-and-pipeline-authentication.md) | Terraform remote state and pipeline authentication |
 
 ## Tech stack
 
@@ -59,7 +62,8 @@ Architecture Decision Records:
 | Cloud | AWS, dedicated workload account in an AWS Organization |
 | Access | IAM Identity Center, temporary credentials only |
 | Infrastructure as Code | Terraform |
-| CI/CD | GitHub Actions |
+| Terraform state | Amazon S3 (versioned, encrypted, native locking) |
+| CI/CD | GitHub Actions, OIDC authentication (no stored AWS keys) |
 | Dev environment | GitHub Codespaces (dev container) |
 
 ## Getting started
