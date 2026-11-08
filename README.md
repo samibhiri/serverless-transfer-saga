@@ -31,6 +31,10 @@ A user transfers money between two fictitious accounts:
 ## Roadmap
 
 - [ ] **Phase 0** — Repository, AWS account security, Terraform foundations
+  - [x] Repository with protected `main` branch and pull-request workflow
+  - [x] Reproducible development environment (dev container)
+  - [x] Multi-account setup, IAM Identity Center, MFA, cost budget ([ADR-0002](docs/adr/0002-aws-account-structure-and-access-management.md))
+  - [ ] Terraform remote state
 - [ ] **Phase 1** — Synchronous API (API Gateway, Lambda, DynamoDB, Cognito), CI/CD
 - [ ] **Phase 2** — Transfer Saga with compensation (Step Functions), idempotency
 - [ ] **Phase 3** — Event-driven communication (EventBridge, SQS, DLQ, outbox)
@@ -41,15 +45,39 @@ A user transfers money between two fictitious accounts:
 
 ## Documentation
 
-- [Architecture Decision Records](docs/adr/)
+Architecture Decision Records:
+
+| ADR | Decision |
+|---|---|
+| [0001](docs/adr/0001-use-terraform-for-infrastructure-as-code.md) | Use Terraform for Infrastructure as Code |
+| [0002](docs/adr/0002-aws-account-structure-and-access-management.md) | AWS account structure and access management |
 
 ## Tech stack
 
 | Area | Choice |
 |---|---|
-| Cloud | AWS |
-| Infrastructure as Code | Terraform ([ADR-0001](docs/adr/0001-use-terraform-for-infrastructure-as-code.md)) |
+| Cloud | AWS, dedicated workload account in an AWS Organization |
+| Access | IAM Identity Center, temporary credentials only |
+| Infrastructure as Code | Terraform |
 | CI/CD | GitHub Actions |
+| Dev environment | GitHub Codespaces (dev container) |
+
+## Getting started
+
+Open the repository in GitHub Codespaces: the dev container provides Python, Terraform, TFLint and the AWS CLI.
+
+Then sign in to AWS with IAM Identity Center (no access keys are used):
+
+```bash
+# First time only: create a CLI profile for the workload account
+aws configure sso --use-device-code
+
+# When the session has expired
+aws sso login --profile <your-profile> --use-device-code
+
+# Check which identity is in use
+aws sts get-caller-identity --profile <your-profile>
+```
 
 ## License
 
