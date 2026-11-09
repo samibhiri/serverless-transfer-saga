@@ -1,0 +1,147 @@
+name: Terraform plan
+
+# Runs on every pull request to main:
+#  - lint:  formatting, validation and TFLint for every Terraform configuration (no AWS access)
+#  - plan:  terraform plan of the dev environment with the read-only plan role (OIDC)
+on:
+  pull_request:
+    branches: [main]
+
+# Least privilege for the GITHUB_TOKEN; jobs add only what they need.
+permissions:
+  contents: read
+
+# One run per pull request: a new push cancels the previous run.
+concurrency:
+  group: terraform-plan-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+  AWS_REGION: eu-west-3
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Check formatting
+        run: terraform fmt -check -recursive -diff infra
+
+      - name: Validate configurations
+        run: |
+          for dir in infra/bootstrap infra/envs/dev; do
+            echo "::group::terraform validate ${dir}"
+            terraform -chdir="${dir}" init -backend=false
+            terraform -chdir="${dir}" validate
+            echo "::endgroup::"
+          done
+
+      - name: Set up TFLint
+        uses: terraform-linters/setup-tflint@v4
+
+      - name: Run TFLint
+        run: |
+          tflint --init --config "${GITHUB_WORKSPACE}/.tflint.hcl"
+          tflint --recursive --chdir=infra --config "${GITHUB_WORKSPACE}/.tflint.hcl" --format compact
+
+  plan:
+    name: Plan (dev)
+    needs: lint
+    runs-on: ubuntu-latest
+    # Pull requests from forks receive no secrets and cannot assume the AWS role.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: read
+      id-token: write       # request the OIDC token exchanged for AWS credentials
+      pull-requests: write  # post the plan as a pull-request comment
+    defaults:
+      run:
+        working-directory: infra/envs/dev
+    env:
+      TF_VAR_account_id: ${{ secrets.AWS_ACCOUNT_ID }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC, read-only plan role)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_PLAN_ROLE_ARN }}
+          role-session-name: terraform-plan-pr-${{ github.event.pull_request.number }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Terraform init
+        run: terraform init -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}"
+
+      - name: Terraform plan
+        id: plan
+        run: |
+          terraform plan -no-color -lock-timeout=60s -out=tfplan
+          # Account IDs are not published: they are masked before the plan is posted.
+          terraform show -no-color tfplan \
+            | sed "s/${TF_VAR_account_id}/<account-id>/g" > plan.txt
+
+      - name: Post plan to the pull request
+        uses: actions/github-script@v7
+        env:
+          PLAN_FILE: infra/envs/dev/plan.txt
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- terraform-plan-dev -->';
+            let plan = fs.readFileSync(process.env.PLAN_FILE, 'utf8');
+            const max = 60000;
+            if (plan.length > max) {
+              plan = plan.substring(0, max) + '\n\n... plan truncated, see the workflow logs.';
+            }
+            const body = [
+              marker,
+              '### Terraform plan — `dev`',
+              '',
+              `Commit: ${context.payload.pull_request.head.sha.substring(0, 7)} · [Workflow run](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`,
+              '',
+              '<details><summary>Show plan</summary>',
+              '',
+              '```terraform',
+              plan,
+              '```',
+              '',
+              '</details>',
+            ].join('\n');
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find(c => c.body && c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
