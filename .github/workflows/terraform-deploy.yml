@@ -1,0 +1,71 @@
+name: Terraform deploy
+
+# Manual deployment of the dev environment.
+# Runs only from main, in the protected GitHub environment "dev":
+# GitHub waits for a reviewer's approval before the job starts.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Never run two deployments of the same environment at the same time,
+# and never cancel a deployment in progress.
+concurrency:
+  group: terraform-deploy-dev
+  cancel-in-progress: false
+
+env:
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+  AWS_REGION: eu-west-3
+
+jobs:
+  deploy:
+    name: Deploy (dev)
+    runs-on: ubuntu-latest
+    # Explicit guard; the environment's branch rule enforces it as well.
+    if: github.ref == 'refs/heads/main'
+    environment: dev
+    permissions:
+      contents: read
+      id-token: write   # request the OIDC token exchanged for AWS credentials
+    defaults:
+      run:
+        working-directory: infra/envs/dev
+    env:
+      TF_VAR_account_id: ${{ secrets.AWS_ACCOUNT_ID }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC, deploy role)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          role-session-name: terraform-deploy-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Terraform init
+        run: terraform init -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}"
+
+      - name: Terraform plan
+        run: |
+          terraform plan -no-color -lock-timeout=120s -out=tfplan
+          {
+            echo "### Terraform plan applied to \`dev\`"
+            echo
+            echo "Commit: \`${GITHUB_SHA::7}\`"
+            echo
+            echo '```terraform'
+            terraform show -no-color tfplan | sed "s/${TF_VAR_account_id}/<account-id>/g"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Terraform apply
+        run: terraform apply -no-color -lock-timeout=120s tfplan
