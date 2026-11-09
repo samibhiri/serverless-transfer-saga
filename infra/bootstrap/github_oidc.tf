@@ -2,6 +2,17 @@
 # The pipeline receives short-lived credentials by assuming an IAM role:
 # no AWS access keys are stored in GitHub.
 
+# Subject claim prefix of this repository, in GitHub's immutable format:
+#   repo:OWNER@OWNER-ID/REPO@REPO-ID
+# The numeric IDs never change and cannot be reused: a repository deleted and
+# recreated under the same name by someone else would not match.
+locals {
+  github_owner = split("/", var.github_repository)[0]
+  github_repo  = split("/", var.github_repository)[1]
+
+  github_subject_prefix = "repo:${local.github_owner}@${var.github_owner_id}/${local.github_repo}@${var.github_repository_id}"
+}
+
 resource "aws_iam_openid_connect_provider" "github" {
   url            = "https://token.actions.githubusercontent.com"
   client_id_list = ["sts.amazonaws.com"]
@@ -31,7 +42,7 @@ data "aws_iam_policy_document" "plan_trust" {
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_repository}:pull_request"]
+      values   = ["${local.github_subject_prefix}:pull_request"]
     }
   }
 }
@@ -87,7 +98,7 @@ data "aws_iam_policy_document" "deploy_trust" {
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_repository}:environment:${var.github_deploy_environment}"]
+      values   = ["${local.github_subject_prefix}:environment:${var.github_deploy_environment}"]
     }
   }
 }
