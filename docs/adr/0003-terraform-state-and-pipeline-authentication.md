@@ -37,13 +37,14 @@ A small Terraform configuration (`infra/bootstrap`) creates the foundations of t
 
 - An IAM **OIDC identity provider** trusts tokens issued by GitHub Actions.
 - Workflows exchange their OIDC token for **temporary credentials** (AWS STS `AssumeRoleWithWebIdentity`, one-hour sessions). No AWS access keys exist in GitHub.
+- Trust conditions use GitHub's **immutable subject claim** format, which includes the numeric IDs of the owner and of the repository: `repo:OWNER@OWNER-ID/REPO@REPO-ID:<context>`. This format is used by default for repositories created after 15 July 2026. Unlike names, numeric IDs are never reused, so a repository deleted and recreated under the same name by someone else cannot assume the roles.
 
 ### 4. Two roles with distinct trust and permissions
 
 | Role | Who can assume it (`sub` claim) | Permissions |
 |---|---|---|
-| `github-actions-terraform-plan` | workflows triggered by a **pull request** of this repository | `ReadOnlyAccess` + create/delete the state lock file |
-| `github-actions-terraform-deploy` | jobs running in the **GitHub environment `dev`** of this repository | `AdministratorAccess` (temporary, see below) |
+| `github-actions-terraform-plan` | workflows triggered by a **pull request** of this repository (`…:pull_request`) | `ReadOnlyAccess` + create/delete the state lock file |
+| `github-actions-terraform-deploy` | jobs running in the **GitHub environment `dev`** of this repository (`…:environment:dev`) | `AdministratorAccess` (temporary, see below) |
 
 The GitHub environment `dev` is restricted to the `main` branch, so that only reviewed and merged code can be deployed.
 

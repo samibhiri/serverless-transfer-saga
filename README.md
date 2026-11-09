@@ -26,7 +26,46 @@ A user transfers money between two fictitious accounts:
 
 ## Architecture
 
-*Diagrams will be added as the project progresses.*
+The overview below shows what is **built so far** and grows with each phase. Detailed views by concern are in [`docs/architecture`](docs/architecture/).
+
+**Current state: phase 0, foundations**
+
+```mermaid
+flowchart LR
+    dev(["Developer<br/>Codespaces"])
+    gh(["GitHub<br/>pull requests + Actions"])
+
+    subgraph org["AWS Organization"]
+        subgraph mgmt["Management account"]
+            idc["IAM Identity Center<br/>+ AWS Budgets"]
+        end
+        subgraph wl["Workload account: transfer (eu-west-3)"]
+            roles["IAM roles<br/>human admin, CI plan, CD deploy"]
+            state[("S3<br/>Terraform state")]
+            app["Application<br/>from phase 1"]
+        end
+    end
+
+    dev -- "SSO, MFA" --> idc
+    idc -- "temporary credentials" --> roles
+    gh -- "OIDC, no stored keys" --> roles
+    roles --> state
+    roles -.-> app
+
+    classDef actor fill:#F1EFE8,stroke:#888780,color:#2C2C2A
+    classDef identity fill:#FCEBEB,stroke:#E24B4A,color:#791F1F
+    classDef data fill:#EEEDFE,stroke:#7F77DD,color:#3C3489
+    classDef todo fill:#FFFFFF,stroke:#888780,color:#5F5E5A,stroke-dasharray: 4 3
+    class dev,gh actor
+    class idc,roles identity
+    class state data
+    class app todo
+```
+
+| View | Content |
+|---|---|
+| [Accounts and access](docs/architecture/accounts-and-access.md) | AWS Organization, IAM Identity Center, roles, break-glass access |
+| [CI/CD](docs/architecture/ci-cd.md) | Pull-request pipeline, OIDC authentication, repository protection |
 
 ## Roadmap
 
@@ -35,7 +74,7 @@ A user transfers money between two fictitious accounts:
   - [x] Reproducible development environment (dev container)
   - [x] Multi-account setup, IAM Identity Center, MFA, cost budget ([ADR-0002](docs/adr/0002-aws-account-structure-and-access-management.md))
   - [x] Terraform remote state in S3 and GitHub Actions authentication with OIDC ([ADR-0003](docs/adr/0003-terraform-state-and-pipeline-authentication.md))
-  - [ ] CI pipeline: `terraform plan` on every pull request
+  - [x] CI pipeline: lint and `terraform plan` on every pull request, required before merge
   - [ ] CD pipeline: manual `terraform apply`
 - [ ] **Phase 1** — Synchronous API (API Gateway, Lambda, DynamoDB, Cognito), CI/CD
 - [ ] **Phase 2** — Transfer Saga with compensation (Step Functions), idempotency
