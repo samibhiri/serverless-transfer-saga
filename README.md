@@ -77,6 +77,12 @@ flowchart LR
   - [x] CI pipeline: lint and `terraform plan` on every pull request, required before merge
   - [x] CD pipeline: manual `terraform apply` from `main`, in the protected `dev` environment with approval
 - [ ] **Phase 1** — Synchronous API (API Gateway, Lambda, DynamoDB, Cognito)
+  - [x] DynamoDB accounts table
+  - [x] Accounts Lambda function (Python) with unit tests in CI ([ADR-0004](docs/adr/0004-one-lambda-function-per-service.md))
+  - [ ] Lambda deployment (IAM role, logs)
+  - [ ] API Gateway REST API
+  - [ ] Cognito authentication
+  - [ ] Deployment and end-to-end test
 - [ ] **Phase 2** — Transfer Saga with compensation (Step Functions), idempotency
 - [ ] **Phase 3** — Event-driven communication (EventBridge, SQS, DLQ, outbox)
 - [ ] **Phase 4** — CQRS read model
@@ -93,6 +99,7 @@ Architecture Decision Records:
 | [0001](docs/adr/0001-use-terraform-for-infrastructure-as-code.md) | Use Terraform for Infrastructure as Code |
 | [0002](docs/adr/0002-aws-account-structure-and-access-management.md) | AWS account structure and access management |
 | [0003](docs/adr/0003-terraform-state-and-pipeline-authentication.md) | Terraform remote state and pipeline authentication |
+| [0004](docs/adr/0004-one-lambda-function-per-service.md) | One Lambda function per service |
 
 ## Tech stack
 
@@ -100,6 +107,7 @@ Architecture Decision Records:
 |---|---|
 | Cloud | AWS, dedicated workload account in an AWS Organization |
 | Access | IAM Identity Center, temporary credentials only |
+| Application code | Python 3.13 on AWS Lambda, tested with pytest and moto |
 | Infrastructure as Code | Terraform |
 | Terraform state | Amazon S3 (versioned, encrypted, native locking) |
 | CI/CD | GitHub Actions, OIDC authentication (no stored AWS keys) |
