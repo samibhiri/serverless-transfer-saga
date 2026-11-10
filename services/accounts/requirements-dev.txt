@@ -1,0 +1,5 @@
+# Development and test dependencies only.
+# The Lambda function itself needs no dependency: boto3 is provided by the runtime.
+boto3>=1.35
+moto[dynamodb]>=5.0
+pytest>=8.0
