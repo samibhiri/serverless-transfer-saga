@@ -25,3 +25,9 @@ variable "deletion_protection" {
   type        = bool
   default     = false
 }
+
+variable "log_retention_days" {
+  description = "Retention of the Lambda log groups, in days."
+  type        = number
+  default     = 14
+}
