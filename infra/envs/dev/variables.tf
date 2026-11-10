@@ -19,3 +19,9 @@ variable "environment" {
   type        = string
   default     = "dev"
 }
+
+variable "deletion_protection" {
+  description = "Protect stateful resources (DynamoDB tables) against deletion. Disabled in dev so that the environment can be destroyed between phases."
+  type        = bool
+  default     = false
+}
