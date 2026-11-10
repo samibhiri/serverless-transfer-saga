@@ -65,18 +65,18 @@ flowchart LR
 | View | Content |
 |---|---|
 | [Accounts and access](docs/architecture/accounts-and-access.md) | AWS Organization, IAM Identity Center, roles, break-glass access |
-| [CI/CD](docs/architecture/ci-cd.md) | Pull-request pipeline, OIDC authentication, repository protection |
+| [CI/CD](docs/architecture/ci-cd.md) | Pull-request and deployment pipelines, OIDC authentication, repository and environment protection |
 
 ## Roadmap
 
-- [ ] **Phase 0** — Repository, AWS account security, Terraform foundations
+- [x] **Phase 0** — Repository, AWS account security, Terraform foundations
   - [x] Repository with protected `main` branch and pull-request workflow
   - [x] Reproducible development environment (dev container)
   - [x] Multi-account setup, IAM Identity Center, MFA, cost budget ([ADR-0002](docs/adr/0002-aws-account-structure-and-access-management.md))
   - [x] Terraform remote state in S3 and GitHub Actions authentication with OIDC ([ADR-0003](docs/adr/0003-terraform-state-and-pipeline-authentication.md))
   - [x] CI pipeline: lint and `terraform plan` on every pull request, required before merge
-  - [ ] CD pipeline: manual `terraform apply`
-- [ ] **Phase 1** — Synchronous API (API Gateway, Lambda, DynamoDB, Cognito), CI/CD
+  - [x] CD pipeline: manual `terraform apply` from `main`, in the protected `dev` environment with approval
+- [ ] **Phase 1** — Synchronous API (API Gateway, Lambda, DynamoDB, Cognito)
 - [ ] **Phase 2** — Transfer Saga with compensation (Step Functions), idempotency
 - [ ] **Phase 3** — Event-driven communication (EventBridge, SQS, DLQ, outbox)
 - [ ] **Phase 4** — CQRS read model

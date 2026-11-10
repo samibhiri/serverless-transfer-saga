@@ -12,7 +12,8 @@ flowchart LR
     plan["Job: Plan (dev)<br/>terraform plan"]
     review{"Review +<br/>required checks"}
     main["main branch"]
-    deploy["Deploy workflow<br/>manual, environment dev<br/>terraform apply"]
+    approve{"Manual run +<br/>approval (dev)"}
+    deploy["Job: Deploy (dev)<br/>terraform plan + apply"]
 
     subgraph aws["AWS workload account: transfer"]
         sts["AWS STS"]
@@ -25,21 +26,28 @@ flowchart LR
     plan -- "read state, lock" --> state
     plan -- "plan posted as a comment" --> pr
     pr --> review -- "squash and merge" --> main
-    main -. "planned" .-> deploy
-    deploy -. "OIDC: deploy role" .-> sts
-    deploy -. "apply" .-> app
+    main --> approve --> deploy
+    deploy -- "OIDC: deploy role" --> sts
+    deploy -- "read and write state" --> state
+    deploy -- "apply" --> app
 
     classDef gh fill:#F1EFE8,stroke:#888780,color:#2C2C2A
     classDef awssvc fill:#FBEAF0,stroke:#D4537E,color:#72243E
     classDef data fill:#EEEDFE,stroke:#7F77DD,color:#3C3489
-    classDef todo fill:#FFFFFF,stroke:#888780,color:#5F5E5A,stroke-dasharray: 4 3
-    class pr,lint,plan,review,main gh
+    class pr,lint,plan,review,main,approve,deploy gh
     class sts awssvc
     class state,app data
-    class deploy todo
 ```
 
-Dashed elements are not built yet.
+## Workflows
+
+| Workflow | Trigger | Job | AWS role | What it does |
+|---|---|---|---|---|
+| `terraform-plan.yml` | every pull request to `main` | Lint | none | `fmt`, `validate` and TFLint on every configuration |
+| | | Plan (dev) | plan role (read-only) | `terraform plan`, posted as a pull-request comment |
+| `terraform-deploy.yml` | manual (`workflow_dispatch`), from `main` | Deploy (dev) | deploy role | `terraform plan`, shown in the job summary, then `terraform apply` of that exact plan |
+
+The reviewer approves the deployment before the job computes its plan. This is accepted because the same code was already planned and reviewed in its pull request. Separating plan and apply into two jobs, with the approval between them, would require an additional role and environment.
 
 ## Authentication of a pull-request workflow
 
@@ -64,3 +72,12 @@ sequenceDiagram
 - Every change goes through a pull request, merged with **squash and merge**.
 - The **Lint** and **Plan (dev)** checks must pass, on a branch up to date with `main`.
 - Pull requests from forks do not run the plan job: they receive no secrets and cannot assume the AWS role.
+
+## Deployment protection
+
+The GitHub environment `dev` is the second lock on the deploy role, in addition to the `sub` condition of its trust policy:
+
+- **Deployment branches:** only `main`, so only reviewed and merged code can be deployed.
+- **Required reviewer:** every deployment waits for a manual approval.
+- **Environment secret:** the deploy role ARN is readable only by jobs running in this environment.
+- **Concurrency:** one deployment at a time; a deployment in progress is never cancelled.
