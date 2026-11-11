@@ -12,3 +12,13 @@ output "api_url" {
   description = "Base URL of the API stage."
   value       = aws_api_gateway_stage.this.invoke_url
 }
+
+output "user_pool_id" {
+  description = "ID of the Cognito user pool."
+  value       = aws_cognito_user_pool.this.id
+}
+
+output "user_pool_client_id" {
+  description = "ID of the Cognito app client used to sign in (public client, no secret)."
+  value       = aws_cognito_user_pool_client.api.id
+}

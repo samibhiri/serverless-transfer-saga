@@ -30,7 +30,7 @@ The overview below shows what is **built so far** and grows with each phase. Det
 
 **Current state: phase 1 in progress (synchronous API)**
 
-Built in code and planned by the pipeline; deployed at the end of the phase. Dashed elements are not built yet.
+Built in code and planned by the pipeline; deployed at the end of the phase.
 
 ```mermaid
 flowchart LR
@@ -48,7 +48,7 @@ flowchart LR
                 state[("S3<br/>Terraform state")]
             end
             subgraph application["Application"]
-                cognito["Amazon Cognito<br/>authentication"]
+                cognito["Amazon Cognito<br/>user pool"]
                 apigw["API Gateway<br/>REST API, throttling"]
                 fn["Lambda<br/>accounts service"]
                 ddb[("DynamoDB<br/>accounts")]
@@ -62,8 +62,9 @@ flowchart LR
     dev -- "SSO, MFA" --> idc
     idc -- "temporary credentials" --> roles
     roles --> state
-    client -. "sign in" .-> cognito
-    client -- "HTTPS" --> apigw
+    client -- "1. sign in" --> cognito
+    client -- "2. HTTPS + ID token" --> apigw
+    apigw -. "validates token" .-> cognito
     apigw --> fn --> ddb
     apigw --> logs
     fn --> logs
@@ -79,14 +80,14 @@ flowchart LR
     class state,ddb data
     class fn compute
     class apigw,logs integration
-    class cognito todo
+    class cognito identity
 ```
 
 | View | Content |
 |---|---|
 | [Accounts and access](docs/architecture/accounts-and-access.md) | AWS Organization, IAM Identity Center, roles, break-glass access |
 | [CI/CD](docs/architecture/ci-cd.md) | Pull-request and deployment pipelines, OIDC authentication, repository and environment protection |
-| [Accounts API](docs/architecture/accounts-api.md) | Request flow, routes, permissions, logs and throttling of the accounts API |
+| [Accounts API](docs/architecture/accounts-api.md) | Authentication, request flow, routes, permissions, logs and throttling of the accounts API |
 
 ## Roadmap
 
@@ -102,7 +103,7 @@ flowchart LR
   - [x] Accounts Lambda function (Python) with unit tests in CI ([ADR-0004](docs/adr/0004-one-lambda-function-per-service.md))
   - [x] Lambda function infrastructure: least-privilege role, log group with retention
   - [x] API Gateway REST API: routes, throttling, access logs ([ADR-0005](docs/adr/0005-api-gateway-rest-api.md))
-  - [ ] Cognito authentication
+  - [x] Cognito authentication: user pool, API authorizer ([ADR-0006](docs/adr/0006-api-authentication-with-cognito.md))
   - [ ] Deployment and end-to-end test
 - [ ] **Phase 2** — Transfer Saga with compensation (Step Functions), idempotency
 - [ ] **Phase 3** — Event-driven communication (EventBridge, SQS, DLQ, outbox)
@@ -122,6 +123,7 @@ Architecture Decision Records:
 | [0003](docs/adr/0003-terraform-state-and-pipeline-authentication.md) | Terraform remote state and pipeline authentication |
 | [0004](docs/adr/0004-one-lambda-function-per-service.md) | One Lambda function per service |
 | [0005](docs/adr/0005-api-gateway-rest-api.md) | Amazon API Gateway REST API |
+| [0006](docs/adr/0006-api-authentication-with-cognito.md) | API authentication with Amazon Cognito |
 
 ## Tech stack
 
