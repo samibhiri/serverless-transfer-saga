@@ -104,6 +104,7 @@ flowchart LR
   - [x] Lambda function infrastructure: least-privilege role, log group with retention
   - [x] API Gateway REST API: routes, throttling, access logs ([ADR-0005](docs/adr/0005-api-gateway-rest-api.md))
   - [x] Cognito authentication: user pool, API authorizer ([ADR-0006](docs/adr/0006-api-authentication-with-cognito.md))
+  - [x] Authorization: users only access their own accounts ([ADR-0007](docs/adr/0007-authorization-by-account-ownership.md))
   - [ ] Deployment and end-to-end test
 - [ ] **Phase 2** — Transfer Saga with compensation (Step Functions), idempotency
 - [ ] **Phase 3** — Event-driven communication (EventBridge, SQS, DLQ, outbox)
@@ -124,6 +125,7 @@ Architecture Decision Records:
 | [0004](docs/adr/0004-one-lambda-function-per-service.md) | One Lambda function per service |
 | [0005](docs/adr/0005-api-gateway-rest-api.md) | Amazon API Gateway REST API |
 | [0006](docs/adr/0006-api-authentication-with-cognito.md) | API authentication with Amazon Cognito |
+| [0007](docs/adr/0007-authorization-by-account-ownership.md) | Authorization by account ownership |
 
 ## Tech stack
 
