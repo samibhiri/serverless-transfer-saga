@@ -62,8 +62,10 @@ sequenceDiagram
     C->>A: POST /accounts, Authorization: ID token
     A->>A: throttling check (10 req/s, burst 20)
     A->>A: verify token signature, issuer and expiry
-    alt missing or invalid token
+    alt missing token
         A-->>C: 401 Unauthorized (Lambda is not invoked)
+    else invalid, tampered or expired token
+        A-->>C: 403 Access Denied (Lambda is not invoked)
     else valid token
         A->>L: invoke with the request and the token claims (Lambda proxy)
         L->>L: owner_id = sub claim of the caller (never from the body)
@@ -108,8 +110,8 @@ sequenceDiagram
 
 | Method and path | Success | Errors |
 |---|---|---|
-| `POST /accounts` | `201` with the new account | `400` invalid input, `401` missing or invalid token, `429` throttled, `500` internal error |
-| `GET /accounts/{account_id}` | `200` with the account, if the caller owns it | `400` invalid id, `401` missing or invalid token, `404` unknown account **or account of another user**, `429` throttled, `500` internal error |
+| `POST /accounts` | `201` with the new account | `400` invalid input, `401` missing token, `403` invalid token, `429` throttled, `500` internal error |
+| `GET /accounts/{account_id}` | `200` with the account, if the caller owns it | `400` invalid id, `401` missing token, `403` invalid token, `404` unknown account **or account of another user**, `429` throttled, `500` internal error |
 
 Amounts are integers in minor units (cents). Internal errors return a generic message; details are written to the function logs only.
 
@@ -117,7 +119,7 @@ Amounts are integers in minor units (cents). Internal errors return a generic me
 
 | Concern | Implementation |
 |---|---|
-| Authentication | Cognito user pool, admin-created users only, strong password policy, optional TOTP MFA. API Gateway rejects requests without a valid ID token (`401`) before invoking Lambda. |
+| Authentication | Cognito user pool, admin-created users only, strong password policy, optional TOTP MFA. API Gateway rejects requests before invoking Lambda: `401` without a token, `403` with an invalid token. |
 | Authorization | An account belongs to the user who created it (`owner_id` = Cognito `sub`, taken from the verified token). Users can only read their own accounts; other accounts return `404`, like unknown ones. Requests without a verified identity are refused (`401`) by the function too (defense in depth). |
 | Least privilege | The function role allows only `GetItem` and `PutItem` on the accounts table, and writing to its own log group. API Gateway may invoke the function only for these two routes of this API. |
 | Rate limiting | Stage throttling on every method: 10 requests per second, bursts of 20. Excess requests receive `429 Too Many Requests`. |
@@ -125,3 +127,18 @@ Amounts are integers in minor units (cents). Internal errors return a generic me
 | Logs | JSON access logs (one line per request) and JSON function logs, both kept 14 days. |
 | Metrics | API Gateway method metrics (count, latency, 4xx, 5xx) and Lambda metrics in CloudWatch. |
 | Backups | DynamoDB point-in-time recovery (35 days). |
+
+## End-to-end tests
+
+[`scripts/e2e-accounts.sh`](../../scripts/e2e-accounts.sh) tests the deployed API: it creates two test users in Cognito (Alice and Bob), signs them in, and checks every rule below. Results at the end of phase 1 (2026-11-11):
+
+| Check | Expected | Result |
+|---|---|---|
+| No token | `401` | ✅ |
+| Tampered token | `403` | ✅ |
+| Alice creates an account | `201` | ✅ |
+| Alice reads her account | `200` | ✅ |
+| Bob reads Alice's account | `404` | ✅ |
+| `owner_id` comes from the token, not from the body | token `sub` | ✅ |
+| Decimal amount | `400` | ✅ |
+| Invalid account id | `400` | ✅ |
