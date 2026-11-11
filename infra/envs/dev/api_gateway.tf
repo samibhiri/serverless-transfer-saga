@@ -3,7 +3,7 @@
 #   POST /accounts                 -> accounts Lambda function
 #   GET  /accounts/{account_id}    -> accounts Lambda function
 #
-# Authorization is added in the next step (Amazon Cognito).
+# Every method requires a valid Cognito ID token (ADR-0006).
 
 resource "aws_api_gateway_rest_api" "this" {
   name        = "${local.name_prefix}-api"
@@ -28,13 +28,26 @@ resource "aws_api_gateway_resource" "account" {
   path_part   = "{account_id}"
 }
 
+# --- Authorizer -------------------------------------------------------------------------
+# API Gateway validates the token (signature, issuer, expiry) before calling Lambda:
+# unauthenticated requests are rejected with 401 and never reach the function.
+
+resource "aws_api_gateway_authorizer" "cognito" {
+  name            = "cognito"
+  rest_api_id     = aws_api_gateway_rest_api.this.id
+  type            = "COGNITO_USER_POOLS"
+  provider_arns   = [aws_cognito_user_pool.this.arn]
+  identity_source = "method.request.header.Authorization"
+}
+
 # --- Methods and Lambda proxy integrations ------------------------------------------
 
 resource "aws_api_gateway_method" "create_account" {
   rest_api_id   = aws_api_gateway_rest_api.this.id
   resource_id   = aws_api_gateway_resource.accounts.id
   http_method   = "POST"
-  authorization = "NONE" # replaced by a Cognito authorizer in the next step
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
 }
 
 resource "aws_api_gateway_integration" "create_account" {
@@ -50,7 +63,8 @@ resource "aws_api_gateway_method" "get_account" {
   rest_api_id   = aws_api_gateway_rest_api.this.id
   resource_id   = aws_api_gateway_resource.account.id
   http_method   = "GET"
-  authorization = "NONE" # replaced by a Cognito authorizer in the next step
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
 
   request_parameters = {
     "method.request.path.account_id" = true
@@ -92,6 +106,7 @@ resource "aws_api_gateway_deployment" "this" {
 
   triggers = {
     redeployment = sha1(jsonencode([
+      aws_api_gateway_authorizer.cognito,
       aws_api_gateway_resource.accounts,
       aws_api_gateway_resource.account,
       aws_api_gateway_method.create_account,
