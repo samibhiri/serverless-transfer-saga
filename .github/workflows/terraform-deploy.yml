@@ -1,10 +1,19 @@
 name: Terraform deploy
+run-name: Terraform ${{ inputs.action }} (dev) by @${{ github.actor }}
 
-# Manual deployment of the dev environment.
+# Manual deployment, or destruction, of the dev environment.
 # Runs only from main, in the protected GitHub environment "dev":
 # GitHub waits for a reviewer's approval before the job starts.
 on:
   workflow_dispatch:
+    inputs:
+      action:
+        description: "apply: create or update the dev environment; destroy: delete every application resource (the bootstrap is not affected)"
+        type: choice
+        options:
+          - apply
+          - destroy
+        default: apply
 
 permissions:
   contents: read
@@ -22,7 +31,7 @@ env:
 
 jobs:
   deploy:
-    name: Deploy (dev)
+    name: ${{ inputs.action == 'destroy' && 'Destroy (dev)' || 'Deploy (dev)' }}
     runs-on: ubuntu-latest
     # Explicit guard; the environment's branch rule enforces it as well.
     if: github.ref == 'refs/heads/main'
@@ -54,11 +63,17 @@ jobs:
       - name: Terraform init
         run: terraform init -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}"
 
-      - name: Terraform plan
+      - name: Terraform plan (${{ inputs.action }})
+        env:
+          ACTION: ${{ inputs.action }}
         run: |
-          terraform plan -no-color -lock-timeout=120s -out=tfplan
+          if [ "$ACTION" = "destroy" ]; then
+            terraform plan -destroy -no-color -lock-timeout=120s -out=tfplan
+          else
+            terraform plan -no-color -lock-timeout=120s -out=tfplan
+          fi
           {
-            echo "### Terraform plan applied to \`dev\`"
+            echo "### Terraform ${ACTION} plan applied to \`dev\`"
             echo
             echo "Commit: \`${GITHUB_SHA::7}\`"
             echo
@@ -67,5 +82,6 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # Applies exactly the plan above: a deployment, or a destruction.
       - name: Terraform apply
         run: terraform apply -no-color -lock-timeout=120s tfplan

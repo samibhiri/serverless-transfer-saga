@@ -45,7 +45,11 @@ flowchart LR
 |---|---|---|---|---|
 | `terraform-plan.yml` | every pull request to `main` | Lint | none | `fmt`, `validate` and TFLint on every configuration |
 | | | Plan (dev) | plan role (read-only) | `terraform plan`, posted as a pull-request comment |
-| `terraform-deploy.yml` | manual (`workflow_dispatch`), from `main` | Deploy (dev) | deploy role | `terraform plan`, shown in the job summary, then `terraform apply` of that exact plan |
+| `tests.yml` | every pull request to `main` | Unit tests | none | `pytest` on the Lambda code, AWS mocked with moto |
+| `terraform-deploy.yml` | manual (`workflow_dispatch`), from `main`, action `apply` | Deploy (dev) | deploy role | `terraform plan`, shown in the job summary, then `terraform apply` of that exact plan |
+| | same workflow, action `destroy` | Destroy (dev) | deploy role | `terraform plan -destroy`, shown in the job summary, then applied: every resource of `infra/envs/dev` is deleted; the bootstrap is not affected |
+
+To save costs, the `dev` application is destroyed between working sessions with the `destroy` action, and redeployed with `apply`. Both go through the same approval and leave a run in the history of the repository.
 
 The reviewer approves the deployment before the job computes its plan. This is accepted because the same code was already planned and reviewed in its pull request. Separating plan and apply into two jobs, with the approval between them, would require an additional role and environment.
 
@@ -70,7 +74,7 @@ sequenceDiagram
 
 - `main` is protected by a ruleset: no direct push, no force push, linear history.
 - Every change goes through a pull request, merged with **squash and merge**.
-- The **Lint** and **Plan (dev)** checks must pass, on a branch up to date with `main`.
+- The **Lint**, **Plan (dev)** and **Unit tests** checks must pass, on a branch up to date with `main`.
 - Pull requests from forks do not run the plan job: they receive no secrets and cannot assume the AWS role.
 
 ## Deployment protection
