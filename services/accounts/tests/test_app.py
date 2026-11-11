@@ -37,16 +37,30 @@ def table():
         app._table = None
 
 
-def post_account(body):
+# Cognito "sub" claims of two users, as set by the API Gateway authorizer.
+ALICE = "11111111-1111-1111-1111-111111111111"
+BOB = "22222222-2222-2222-2222-222222222222"
+
+
+def identity(user_id):
+    """requestContext added by the Cognito authorizer after verifying the token."""
+    if user_id is None:
+        return {}
+    return {"requestContext": {"authorizer": {"claims": {"sub": user_id}}}}
+
+
+def post_account(body, user=ALICE):
     raw = body if isinstance(body, str) else json.dumps(body)
-    return app.handler({"httpMethod": "POST", "resource": "/accounts", "body": raw}, None)
+    event = {"httpMethod": "POST", "resource": "/accounts", "body": raw, **identity(user)}
+    return app.handler(event, None)
 
 
-def get_account(account_id):
+def get_account(account_id, user=ALICE):
     event = {
         "httpMethod": "GET",
         "resource": "/accounts/{account_id}",
         "pathParameters": {"account_id": account_id},
+        **identity(user),
     }
     return app.handler(event, None)
 
@@ -64,6 +78,7 @@ def test_create_account_returns_201_with_the_new_account(table):
     assert response["statusCode"] == 201
     account = body_of(response)
     assert uuid.UUID(account["account_id"])
+    assert account["owner_id"] == ALICE
     assert account["owner"] == "Alice"
     assert account["balance"] == 10_000
     assert account["currency"] == "EUR"
@@ -137,9 +152,66 @@ def test_unknown_route_returns_404(table):
 
 
 def test_get_account_without_path_parameter_returns_400(table):
-    response = app.handler({"httpMethod": "GET", "resource": "/accounts/{account_id}"}, None)
+    event = {"httpMethod": "GET", "resource": "/accounts/{account_id}", **identity(ALICE)}
+
+    response = app.handler(event, None)
 
     assert response["statusCode"] == 400
+
+
+# --- Authorization: users only access their own accounts (ADR-0007) -----------
+
+
+def test_owner_is_the_authenticated_caller_not_the_body(table):
+    payload = {"owner": "Alice", "owner_id": BOB}  # a client cannot choose the owner
+
+    account = body_of(post_account(payload, user=ALICE))
+
+    assert account["owner_id"] == ALICE
+
+
+def test_user_cannot_read_another_users_account(table):
+    alice_account = body_of(post_account({"owner": "Alice", "initial_balance": 50_000}, user=ALICE))
+
+    response = get_account(alice_account["account_id"], user=BOB)
+
+    assert response["statusCode"] == 404
+    assert "50000" not in response["body"]
+
+
+def test_foreign_and_unknown_accounts_get_the_same_answer(table):
+    alice_account = body_of(post_account({"owner": "Alice"}, user=ALICE))
+
+    foreign = get_account(alice_account["account_id"], user=BOB)
+    unknown = get_account(str(uuid.uuid4()), user=BOB)
+
+    assert foreign["statusCode"] == unknown["statusCode"] == 404
+    assert foreign["body"] == unknown["body"]
+
+
+@pytest.mark.parametrize(
+    "request_context",
+    [
+        None,
+        {},
+        {"authorizer": None},
+        {"authorizer": {"claims": {}}},
+        {"authorizer": {"claims": {"sub": ""}}},
+    ],
+)
+def test_requests_without_caller_identity_are_rejected(table, request_context):
+    create = {"httpMethod": "POST", "resource": "/accounts", "body": json.dumps({"owner": "Alice"})}
+    read = {
+        "httpMethod": "GET",
+        "resource": "/accounts/{account_id}",
+        "pathParameters": {"account_id": str(uuid.uuid4())},
+    }
+    if request_context is not None:
+        create["requestContext"] = request_context
+        read["requestContext"] = request_context
+
+    assert app.handler(create, None)["statusCode"] == 401
+    assert app.handler(read, None)["statusCode"] == 401
 
 
 def test_unexpected_error_returns_500_without_details(table, monkeypatch):

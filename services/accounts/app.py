@@ -8,6 +8,10 @@ Routes:
     GET  /accounts/{account_id}    read an account and its balance
 
 Amounts are integers in minor units (cents): 12345 means 123.45 EUR.
+
+Authorization (ADR-0007): an account belongs to the Cognito user who created it
+(owner_id = the "sub" claim of the caller's token). A user can only read their
+own accounts; other accounts are reported as not found.
 """
 
 import json
@@ -41,6 +45,24 @@ class ValidationError(Exception):
     """Invalid client input, returned as HTTP 400."""
 
 
+class UnauthenticatedError(Exception):
+    """No verified caller identity in the request, returned as HTTP 401."""
+
+
+def caller_id(event):
+    """Return the verified identity of the caller: the Cognito "sub" claim.
+
+    The claims are set by the API Gateway Cognito authorizer after it has
+    verified the token; they cannot be supplied by the client in the body.
+    Defense in depth: refuse the request if they are missing.
+    """
+    claims = ((event.get("requestContext") or {}).get("authorizer") or {}).get("claims") or {}
+    sub = claims.get("sub")
+    if not isinstance(sub, str) or not sub:
+        raise UnauthenticatedError()
+    return sub
+
+
 def handler(event, context):
     route = (event.get("httpMethod"), event.get("resource"))
     try:
@@ -49,6 +71,8 @@ def handler(event, context):
         if route == ("GET", "/accounts/{account_id}"):
             return get_account(event)
         return response(404, {"message": "Route not found"})
+    except UnauthenticatedError:
+        return response(401, {"message": "Unauthorized"})
     except ValidationError as error:
         return response(400, {"message": str(error)})
     except Exception:
@@ -58,6 +82,7 @@ def handler(event, context):
 
 
 def create_account(event):
+    owner_id = caller_id(event)
     payload = parse_body(event)
     owner = validate_owner(payload.get("owner"))
     initial_balance = validate_amount(payload.get("initial_balance", 0))
@@ -65,6 +90,7 @@ def create_account(event):
 
     account = {
         "account_id": str(uuid.uuid4()),
+        "owner_id": owner_id,
         "owner": owner,
         "balance": initial_balance,
         "currency": currency,
@@ -80,6 +106,7 @@ def create_account(event):
 
 
 def get_account(event):
+    requester_id = caller_id(event)
     account_id = (event.get("pathParameters") or {}).get("account_id", "")
     try:
         uuid.UUID(account_id)
@@ -87,7 +114,9 @@ def get_account(event):
         raise ValidationError("account_id must be a UUID") from None
 
     item = get_table().get_item(Key={"account_id": account_id}).get("Item")
-    if item is None:
+    # Same answer for "does not exist" and "belongs to someone else":
+    # a 403 would confirm that the account exists (no information leak).
+    if item is None or item.get("owner_id") != requester_id:
         return response(404, {"message": "Account not found"})
     return response(200, item)
 

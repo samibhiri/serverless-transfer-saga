@@ -30,7 +30,7 @@ The API must only accept requests from known users. Authentication should be han
 - The function receives the verified identity of the caller (`requestContext.authorizer.claims`), which allows authorization checks in code.
 
 **Negative / accepted risks**
-- **Authentication is not authorization.** Any signed-in user can currently call every route. Checking that a user only reads their own accounts is handled in the application (next step).
+- **Authentication is not authorization.** A valid token proves who the caller is, not which objects they may access. Access to accounts is restricted to their owner in the application: see [ADR-0007](0007-authorization-by-account-ownership.md).
 - **ID token rather than access token with scopes:** simpler, but no fine-grained OAuth scopes per route. Scopes would require a resource server and OAuth flows.
 - **USER_PASSWORD_AUTH** sends the password to Cognito (over TLS). Accepted in `dev` for command-line tests; to be removed when a front end uses SRP.
 - **MFA is optional**, not required. Acceptable for fictitious data; a production system handling money would require it.
