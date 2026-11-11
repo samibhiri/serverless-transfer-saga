@@ -31,3 +31,15 @@ variable "log_retention_days" {
   type        = number
   default     = 14
 }
+
+variable "api_throttling_rate_limit" {
+  description = "Steady-state request rate allowed on each API method, in requests per second."
+  type        = number
+  default     = 10
+}
+
+variable "api_throttling_burst_limit" {
+  description = "Maximum burst of concurrent requests allowed on each API method."
+  type        = number
+  default     = 20
+}

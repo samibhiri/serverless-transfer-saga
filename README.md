@@ -28,44 +28,65 @@ A user transfers money between two fictitious accounts:
 
 The overview below shows what is **built so far** and grows with each phase. Detailed views by concern are in [`docs/architecture`](docs/architecture/).
 
-**Current state: phase 0, foundations**
+**Current state: phase 1 in progress (synchronous API)**
+
+Built in code and planned by the pipeline; deployed at the end of the phase. Dashed elements are not built yet.
 
 ```mermaid
 flowchart LR
     dev(["Developer<br/>Codespaces"])
     gh(["GitHub<br/>pull requests + Actions"])
+    client(["API client"])
 
     subgraph org["AWS Organization"]
         subgraph mgmt["Management account"]
             idc["IAM Identity Center<br/>+ AWS Budgets"]
         end
         subgraph wl["Workload account: transfer (eu-west-3)"]
-            roles["IAM roles<br/>human admin, CI plan, CD deploy"]
-            state[("S3<br/>Terraform state")]
-            app["Application<br/>from phase 1"]
+            subgraph delivery["Delivery foundations"]
+                roles["IAM roles<br/>human admin, CI plan, CD deploy"]
+                state[("S3<br/>Terraform state")]
+            end
+            subgraph application["Application"]
+                cognito["Amazon Cognito<br/>authentication"]
+                apigw["API Gateway<br/>REST API, throttling"]
+                fn["Lambda<br/>accounts service"]
+                ddb[("DynamoDB<br/>accounts")]
+                logs["CloudWatch Logs<br/>access + function logs"]
+            end
         end
     end
 
+    gh -- "OIDC, no stored keys" --> roles
+    gh ~~~ dev
     dev -- "SSO, MFA" --> idc
     idc -- "temporary credentials" --> roles
-    gh -- "OIDC, no stored keys" --> roles
     roles --> state
-    roles -.-> app
+    client -. "sign in" .-> cognito
+    client -- "HTTPS" --> apigw
+    apigw --> fn --> ddb
+    apigw --> logs
+    fn --> logs
 
     classDef actor fill:#F1EFE8,stroke:#888780,color:#2C2C2A
     classDef identity fill:#FCEBEB,stroke:#E24B4A,color:#791F1F
     classDef data fill:#EEEDFE,stroke:#7F77DD,color:#3C3489
+    classDef compute fill:#FAECE7,stroke:#D85A30,color:#712B13
+    classDef integration fill:#FBEAF0,stroke:#D4537E,color:#72243E
     classDef todo fill:#FFFFFF,stroke:#888780,color:#5F5E5A,stroke-dasharray: 4 3
-    class dev,gh actor
+    class client,dev,gh actor
     class idc,roles identity
-    class state data
-    class app todo
+    class state,ddb data
+    class fn compute
+    class apigw,logs integration
+    class cognito todo
 ```
 
 | View | Content |
 |---|---|
 | [Accounts and access](docs/architecture/accounts-and-access.md) | AWS Organization, IAM Identity Center, roles, break-glass access |
 | [CI/CD](docs/architecture/ci-cd.md) | Pull-request and deployment pipelines, OIDC authentication, repository and environment protection |
+| [Accounts API](docs/architecture/accounts-api.md) | Request flow, routes, permissions, logs and throttling of the accounts API |
 
 ## Roadmap
 
@@ -79,8 +100,8 @@ flowchart LR
 - [ ] **Phase 1** — Synchronous API (API Gateway, Lambda, DynamoDB, Cognito)
   - [x] DynamoDB accounts table
   - [x] Accounts Lambda function (Python) with unit tests in CI ([ADR-0004](docs/adr/0004-one-lambda-function-per-service.md))
-  - [ ] Lambda deployment (IAM role, logs)
-  - [ ] API Gateway REST API
+  - [x] Lambda function infrastructure: least-privilege role, log group with retention
+  - [x] API Gateway REST API: routes, throttling, access logs ([ADR-0005](docs/adr/0005-api-gateway-rest-api.md))
   - [ ] Cognito authentication
   - [ ] Deployment and end-to-end test
 - [ ] **Phase 2** — Transfer Saga with compensation (Step Functions), idempotency
@@ -100,6 +121,7 @@ Architecture Decision Records:
 | [0002](docs/adr/0002-aws-account-structure-and-access-management.md) | AWS account structure and access management |
 | [0003](docs/adr/0003-terraform-state-and-pipeline-authentication.md) | Terraform remote state and pipeline authentication |
 | [0004](docs/adr/0004-one-lambda-function-per-service.md) | One Lambda function per service |
+| [0005](docs/adr/0005-api-gateway-rest-api.md) | Amazon API Gateway REST API |
 
 ## Tech stack
 
