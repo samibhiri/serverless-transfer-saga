@@ -14,7 +14,7 @@ The API must only accept requests from known users. Authentication should be han
 - **Password policy:** at least 12 characters, with lowercase, uppercase, digits and symbols. **TOTP MFA** is available to users (optional).
 - One **public app client**, without a client secret. Allowed flows: **SRP** (the password never leaves the client), **refresh token**, and **USER_PASSWORD_AUTH**, enabled to test the API from the command line in `dev`.
 - Tokens are valid for **1 hour**; refresh tokens for **1 day**; token revocation is enabled; user existence errors are hidden.
-- Every API method uses a **Cognito user pool authorizer**: API Gateway validates the **ID token** sent in the `Authorization` header (signature, issuer, expiry) and rejects invalid requests with `401` before invoking Lambda.
+- Every API method uses a **Cognito user pool authorizer**: API Gateway validates the **ID token** sent in the `Authorization` header (signature, issuer, expiry) and rejects invalid requests before invoking Lambda: `401 Unauthorized` when the token is missing, `403 Access Denied` when it is invalid, tampered or expired.
 
 ## Rationale
 
@@ -35,6 +35,7 @@ The API must only accept requests from known users. Authentication should be han
 - **USER_PASSWORD_AUTH** sends the password to Cognito (over TLS). Accepted in `dev` for command-line tests; to be removed when a front end uses SRP.
 - **MFA is optional**, not required. Acceptable for fictitious data; a production system handling money would require it.
 - Users are created manually, outside Terraform, so that no password is stored in the Terraform state.
+- **An invalid token returns `403`, not `401`.** This is the behavior of the API Gateway Cognito authorizer; RFC 6750 would recommend `401` for an invalid bearer token. Kept as is: both cases are rejected before Lambda, and remapping the `ACCESS_DENIED` gateway response would also change other denials (resource policies, WAF).
 
 ## Alternatives not chosen
 

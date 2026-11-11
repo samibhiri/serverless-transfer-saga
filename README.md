@@ -28,9 +28,9 @@ A user transfers money between two fictitious accounts:
 
 The overview below shows what is **built so far** and grows with each phase. Detailed views by concern are in [`docs/architecture`](docs/architecture/).
 
-**Current state: phase 1 in progress (synchronous API)**
+**Current state: phase 1 complete (synchronous API)**
 
-Built in code and planned by the pipeline; deployed at the end of the phase.
+Deployed and tested end to end at the end of phase 1. To save costs, the `dev` application is destroyed between working sessions and redeployed by the pipeline when needed; the delivery foundations stay in place.
 
 ```mermaid
 flowchart LR
@@ -98,14 +98,14 @@ flowchart LR
   - [x] Terraform remote state in S3 and GitHub Actions authentication with OIDC ([ADR-0003](docs/adr/0003-terraform-state-and-pipeline-authentication.md))
   - [x] CI pipeline: lint and `terraform plan` on every pull request, required before merge
   - [x] CD pipeline: manual `terraform apply` from `main`, in the protected `dev` environment with approval
-- [ ] **Phase 1** — Synchronous API (API Gateway, Lambda, DynamoDB, Cognito)
+- [x] **Phase 1** — Synchronous API (API Gateway, Lambda, DynamoDB, Cognito)
   - [x] DynamoDB accounts table
   - [x] Accounts Lambda function (Python) with unit tests in CI ([ADR-0004](docs/adr/0004-one-lambda-function-per-service.md))
   - [x] Lambda function infrastructure: least-privilege role, log group with retention
   - [x] API Gateway REST API: routes, throttling, access logs ([ADR-0005](docs/adr/0005-api-gateway-rest-api.md))
   - [x] Cognito authentication: user pool, API authorizer ([ADR-0006](docs/adr/0006-api-authentication-with-cognito.md))
   - [x] Authorization: users only access their own accounts ([ADR-0007](docs/adr/0007-authorization-by-account-ownership.md))
-  - [ ] Deployment and end-to-end test
+  - [x] Deployment and end-to-end tests ([`scripts/e2e-accounts.sh`](scripts/e2e-accounts.sh))
 - [ ] **Phase 2** — Transfer Saga with compensation (Step Functions), idempotency
 - [ ] **Phase 3** — Event-driven communication (EventBridge, SQS, DLQ, outbox)
 - [ ] **Phase 4** — CQRS read model
