@@ -88,6 +88,7 @@ flowchart LR
 | [Accounts and access](docs/architecture/accounts-and-access.md) | AWS Organization, IAM Identity Center, roles, break-glass access |
 | [CI/CD](docs/architecture/ci-cd.md) | Pull-request and deployment pipelines, OIDC authentication, repository and environment protection |
 | [Accounts API](docs/architecture/accounts-api.md) | Authentication, request flow, routes, permissions, logs and throttling of the accounts API |
+| [Transfer Saga](docs/architecture/transfer-saga.md) | Design of phase 2: state machine, compensation, idempotency, data model (in progress) |
 
 ## Roadmap
 
@@ -107,6 +108,11 @@ flowchart LR
   - [x] Authorization: users only access their own accounts ([ADR-0007](docs/adr/0007-authorization-by-account-ownership.md))
   - [x] Deployment and end-to-end tests ([`scripts/e2e-accounts.sh`](scripts/e2e-accounts.sh))
 - [ ] **Phase 2** — Transfer Saga with compensation (Step Functions), idempotency
+  - [x] Design: Saga orchestration, asynchronous API, idempotency ([ADR-0008](docs/adr/0008-transfer-saga-orchestrated-with-step-functions.md))
+  - [ ] Transfers table and API (`POST` / `GET /transfers`), idempotency key
+  - [ ] Saga steps: fraud check, debit, credit, compensation
+  - [ ] Step Functions state machine
+  - [ ] API routes, deployment and end-to-end tests of failure scenarios
 - [ ] **Phase 3** — Event-driven communication (EventBridge, SQS, DLQ, outbox)
 - [ ] **Phase 4** — CQRS read model
 - [ ] **Phase 5** — Resilience and observability
@@ -126,6 +132,7 @@ Architecture Decision Records:
 | [0005](docs/adr/0005-api-gateway-rest-api.md) | Amazon API Gateway REST API |
 | [0006](docs/adr/0006-api-authentication-with-cognito.md) | API authentication with Amazon Cognito |
 | [0007](docs/adr/0007-authorization-by-account-ownership.md) | Authorization by account ownership |
+| [0008](docs/adr/0008-transfer-saga-orchestrated-with-step-functions.md) | Transfer Saga orchestrated with AWS Step Functions |
 
 ## Tech stack
 
