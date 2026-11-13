@@ -24,3 +24,25 @@ resource "aws_dynamodb_table" "accounts" {
   # Disabled in dev so that the environment can be destroyed between phases.
   deletion_protection_enabled = var.deletion_protection
 }
+
+# Transfers table: one item per transfer, updated by the transfer Saga (ADR-0008).
+#   transfer_id (partition key) | owner_id | source_account_id | target_account_id
+#   amount | currency | status | debited_at | credited_at | refunded_at | ...
+# transfer_id is a UUID v5 of the caller and the idempotency key.
+
+resource "aws_dynamodb_table" "transfers" {
+  name         = "${local.name_prefix}-transfers"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "transfer_id"
+
+  attribute {
+    name = "transfer_id"
+    type = "S"
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  deletion_protection_enabled = var.deletion_protection
+}
