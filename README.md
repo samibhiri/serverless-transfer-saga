@@ -112,7 +112,8 @@ flowchart LR
   - [x] Transfers table and API code (`POST` / `GET /transfers`), idempotency key, unit tests
   - [x] Saga steps (debit, credit, refund) and simulated fraud check service, idempotent, unit tests
   - [x] Step Functions state machine and Lambda functions of the Saga
-  - [ ] API routes, deployment and end-to-end tests of failure scenarios
+  - [x] Transfers API: Lambda function and API routes
+  - [ ] Deployment and end-to-end tests of the four outcomes
 - [ ] **Phase 3** — Event-driven communication (EventBridge, SQS, DLQ, outbox)
 - [ ] **Phase 4** — CQRS read model
 - [ ] **Phase 5** — Resilience and observability

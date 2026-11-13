@@ -32,3 +32,8 @@ output "transfer_saga_state_machine_arn" {
   description = "ARN of the transfer Saga state machine."
   value       = aws_sfn_state_machine.transfer_saga.arn
 }
+
+output "transfers_function_name" {
+  description = "Name of the transfers Lambda function."
+  value       = aws_lambda_function.transfers.function_name
+}
