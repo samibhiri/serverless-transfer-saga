@@ -1,16 +1,5 @@
 # Transfer Saga
 
-> **Design of phase 2, being implemented.** This view describes the target design; it is updated as each part is built.
->
-> | Part | Status |
-> |---|---|
-> | `transfers` table | built |
-> | Transfers API code (`services/transfers`), idempotency, unit tests | built |
-> | Saga steps code (`services/saga_steps`) and fraud check service (`services/fraud_check`), unit tests | built |
-> | Step Functions state machine (`infra/envs/dev/statemachines/transfer-saga.asl.json`), Lambda functions of the steps | built |
-> | API routes (`POST /transfers`, `GET /transfers/{transfer_id}`) and Lambda function of the transfers API | built |
-> | Deployment and end-to-end tests of the four outcomes | to do |
-
 This view shows how a transfer between two accounts is processed.
 Decision: [ADR-0008](../adr/0008-transfer-saga-orchestrated-with-step-functions.md) (Saga orchestrated with Step Functions). Authentication and authorization follow [ADR-0006](../adr/0006-api-authentication-with-cognito.md) and [ADR-0007](../adr/0007-authorization-by-account-ownership.md).
 
@@ -241,3 +230,24 @@ The history of each execution in Step Functions gives the detail of every step (
 - **Race between two identical requests:** the conditional write lets only one of them create the transfer; the other one reads it back and answers as a replay.
 - **Checks before recording a transfer:** the caller owns the source account (`404` otherwise, same answer as an unknown account), the target account exists (`404`), both accounts have the same currency (`400`). The balance is **not** checked here: the debit step of the Saga does it atomically.
 - **Least privilege of the transfers function:** read accounts (`GetItem`), read and create transfers (`GetItem`, `PutItem`), start the transfer Saga (`states:StartExecution` on this state machine only). It never moves money: only the Saga steps do.
+
+## Known limitation
+
+If the debit or the credit fails for a **technical** reason after every retry (for example, a function timeout), the outcome of the step is unknown. The execution stops in `InvariantBroken` and the transfer stays `PENDING` until someone investigates; the alarm on failed executions comes in phase 5.
+
+A possible improvement is an automatic **reconciliation**: wait a few seconds, read the transfer again, and continue from the step marks (`debited_at` present: continue to the credit; absent: `FAILED` with certainty). The marks make this safe, since they are written in the same transaction as the money move. Not implemented, as such failures are rare and visible.
+
+## End-to-end tests
+
+[`scripts/e2e-transfers.sh`](../../scripts/e2e-transfers.sh) tests the deployed Saga with fresh accounts. Results at the end of phase 2 (2026-11-13): **26 checks passed**.
+
+| Scenario | How it is triggered | Checked | Result |
+|---|---|---|---|
+| `COMPLETED` | regular transfer of 30.00 | status, source and target balances | ✅ |
+| Idempotency | same key resent; same key with another amount; no key | same `transfer_id` and no second debit; `422`; `400` | ✅ |
+| `REJECTED` | 6,000.00, above the fraud threshold | status, reason, balance unchanged | ✅ |
+| `FAILED` | 90.00 from an account holding 50.00 | status, `InsufficientFunds`, balance unchanged | ✅ |
+| `COMPENSATED` | target account closed (`CLOSED`) in DynamoDB by an administrator | status, `CreditRejected`, `debited_at` and `refunded_at` set, balances restored | ✅ |
+| Authorization | Bob reads Alice's transfer; Alice transfers from Bob's account | `404`, Bob's balance unchanged | ✅ |
+
+The simulated fraud service fails 20 % of the time; with 4 retries, the probability that it makes a transfer fail is about 3 in 10,000.

@@ -28,9 +28,9 @@ A user transfers money between two fictitious accounts:
 
 The overview below shows what is **built so far** and grows with each phase. Detailed views by concern are in [`docs/architecture`](docs/architecture/).
 
-**Current state: phase 1 complete (synchronous API)**
+**Current state: phase 2 complete (transfer Saga)**
 
-Deployed and tested end to end at the end of phase 1. To save costs, the `dev` application is destroyed between working sessions and redeployed by the pipeline when needed; the delivery foundations stay in place.
+Deployed and tested end to end at the end of each phase. To save costs, the `dev` application is destroyed between working sessions and redeployed by the pipeline when needed; the delivery foundations stay in place.
 
 ```mermaid
 flowchart LR
@@ -51,8 +51,11 @@ flowchart LR
                 cognito["Amazon Cognito<br/>user pool"]
                 apigw["API Gateway<br/>REST API, throttling"]
                 fn["Lambda<br/>accounts service"]
+                tfn["Lambda<br/>transfers service"]
+                sfn["Step Functions<br/>transfer Saga"]
+                steps["Lambda<br/>Saga steps + fraud check"]
                 ddb[("DynamoDB<br/>accounts")]
-                logs["CloudWatch Logs<br/>access + function logs"]
+                tdb[("DynamoDB<br/>transfers")]
             end
         end
     end
@@ -66,8 +69,11 @@ flowchart LR
     client -- "2. HTTPS + ID token" --> apigw
     apigw -. "validates token" .-> cognito
     apigw --> fn --> ddb
-    apigw --> logs
-    fn --> logs
+    apigw --> tfn --> tdb
+    tfn -- "start" --> sfn
+    sfn --> steps
+    steps --> ddb
+    steps --> tdb
 
     classDef actor fill:#F1EFE8,stroke:#888780,color:#2C2C2A
     classDef identity fill:#FCEBEB,stroke:#E24B4A,color:#791F1F
@@ -77,9 +83,9 @@ flowchart LR
     classDef todo fill:#FFFFFF,stroke:#888780,color:#5F5E5A,stroke-dasharray: 4 3
     class client,dev,gh actor
     class idc,roles identity
-    class state,ddb data
-    class fn compute
-    class apigw,logs integration
+    class state,ddb,tdb data
+    class fn,tfn,steps compute
+    class apigw,sfn integration
     class cognito identity
 ```
 
@@ -88,7 +94,7 @@ flowchart LR
 | [Accounts and access](docs/architecture/accounts-and-access.md) | AWS Organization, IAM Identity Center, roles, break-glass access |
 | [CI/CD](docs/architecture/ci-cd.md) | Pull-request and deployment pipelines, OIDC authentication, repository and environment protection |
 | [Accounts API](docs/architecture/accounts-api.md) | Authentication, request flow, routes, permissions, logs and throttling of the accounts API |
-| [Transfer Saga](docs/architecture/transfer-saga.md) | Design of phase 2: state machine, compensation, idempotency, data model (in progress) |
+| [Transfer Saga](docs/architecture/transfer-saga.md) | State machine, compensation, idempotency, data model, end-to-end test results |
 
 ## Roadmap
 
@@ -107,13 +113,13 @@ flowchart LR
   - [x] Cognito authentication: user pool, API authorizer ([ADR-0006](docs/adr/0006-api-authentication-with-cognito.md))
   - [x] Authorization: users only access their own accounts ([ADR-0007](docs/adr/0007-authorization-by-account-ownership.md))
   - [x] Deployment and end-to-end tests ([`scripts/e2e-accounts.sh`](scripts/e2e-accounts.sh))
-- [ ] **Phase 2** — Transfer Saga with compensation (Step Functions), idempotency
+- [x] **Phase 2** — Transfer Saga with compensation (Step Functions), idempotency
   - [x] Design: Saga orchestration, asynchronous API, idempotency ([ADR-0008](docs/adr/0008-transfer-saga-orchestrated-with-step-functions.md))
   - [x] Transfers table and API code (`POST` / `GET /transfers`), idempotency key, unit tests
   - [x] Saga steps (debit, credit, refund) and simulated fraud check service, idempotent, unit tests
   - [x] Step Functions state machine and Lambda functions of the Saga
   - [x] Transfers API: Lambda function and API routes
-  - [ ] Deployment and end-to-end tests of the four outcomes
+  - [x] Deployment and end-to-end tests of the four outcomes ([`scripts/e2e-transfers.sh`](scripts/e2e-transfers.sh))
 - [ ] **Phase 3** — Event-driven communication (EventBridge, SQS, DLQ, outbox)
 - [ ] **Phase 4** — CQRS read model
 - [ ] **Phase 5** — Resilience and observability
