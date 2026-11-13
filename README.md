@@ -111,7 +111,7 @@ flowchart LR
   - [x] Design: Saga orchestration, asynchronous API, idempotency ([ADR-0008](docs/adr/0008-transfer-saga-orchestrated-with-step-functions.md))
   - [x] Transfers table and API code (`POST` / `GET /transfers`), idempotency key, unit tests
   - [x] Saga steps (debit, credit, refund) and simulated fraud check service, idempotent, unit tests
-  - [ ] Step Functions state machine
+  - [x] Step Functions state machine and Lambda functions of the Saga
   - [ ] API routes, deployment and end-to-end tests of failure scenarios
 - [ ] **Phase 3** — Event-driven communication (EventBridge, SQS, DLQ, outbox)
 - [ ] **Phase 4** — CQRS read model

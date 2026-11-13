@@ -1,0 +1,210 @@
+{
+  "Comment": "Transfer Saga (ADR-0008): fraud check, debit, credit, with refund as compensation. Input: {\"transfer_id\": \"...\"}",
+  "StartAt": "LoadTransfer",
+  "States": {
+    "LoadTransfer": {
+      "Comment": "Read the amount of the transfer (direct DynamoDB integration, no Lambda).",
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:getItem",
+      "Parameters": {
+        "TableName": "${transfers_table}",
+        "Key": { "transfer_id": { "S.$": "$.transfer_id" } },
+        "ConsistentRead": true
+      },
+      "ResultSelector": { "amount.$": "States.StringToJson($.Item.amount.N)" },
+      "ResultPath": "$.transfer",
+      "Retry": [
+        { "ErrorEquals": ["States.TaskFailed"], "IntervalSeconds": 1, "MaxAttempts": 3, "BackoffRate": 2, "JitterStrategy": "FULL" }
+      ],
+      "Next": "FraudCheck"
+    },
+    "FraudCheck": {
+      "Comment": "Call the (simulated, unreliable) fraud service. Outages are retried with backoff.",
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${fraud_check_function}",
+        "Payload": { "transfer_id.$": "$.transfer_id", "amount.$": "$.transfer.amount" }
+      },
+      "ResultSelector": { "decision.$": "$.Payload.decision", "reason.$": "$.Payload.reason" },
+      "ResultPath": "$.fraud",
+      "Retry": [
+        {
+          "ErrorEquals": ["FraudServiceUnavailable", "Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"],
+          "IntervalSeconds": 1, "MaxAttempts": 4, "BackoffRate": 2, "JitterStrategy": "FULL"
+        }
+      ],
+      "Catch": [
+        { "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "MarkFailed" }
+      ],
+      "Next": "FraudDecision"
+    },
+    "FraudDecision": {
+      "Type": "Choice",
+      "Choices": [
+        { "Variable": "$.fraud.decision", "StringEquals": "ACCEPTED", "Next": "Debit" }
+      ],
+      "Default": "MarkRejected"
+    },
+    "Debit": {
+      "Comment": "Debit the source account if the balance is sufficient (idempotent step). A technical failure after all retries leaves the outcome unknown: stop and investigate, never guess.",
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${saga_steps_function}",
+        "Payload": { "action": "debit", "transfer_id.$": "$.transfer_id" }
+      },
+      "ResultSelector": { "result.$": "$.Payload.result" },
+      "ResultPath": "$.debit",
+      "Retry": [
+        {
+          "ErrorEquals": ["TransientError", "Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"],
+          "IntervalSeconds": 1, "MaxAttempts": 4, "BackoffRate": 2, "JitterStrategy": "FULL"
+        }
+      ],
+      "Catch": [
+        { "ErrorEquals": ["InsufficientFunds"], "ResultPath": "$.error", "Next": "MarkFailed" },
+        { "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "InvariantBroken" }
+      ],
+      "Next": "Credit"
+    },
+    "Credit": {
+      "Comment": "Credit the target account (idempotent step). Any refusal after retries triggers the compensation.",
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${saga_steps_function}",
+        "Payload": { "action": "credit", "transfer_id.$": "$.transfer_id" }
+      },
+      "ResultSelector": { "result.$": "$.Payload.result" },
+      "ResultPath": "$.credit",
+      "Retry": [
+        {
+          "ErrorEquals": ["TransientError", "Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"],
+          "IntervalSeconds": 1, "MaxAttempts": 4, "BackoffRate": 2, "JitterStrategy": "FULL"
+        }
+      ],
+      "Catch": [
+        { "ErrorEquals": ["StepNotAllowed"], "ResultPath": "$.error", "Next": "InvariantBroken" },
+        { "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "Refund" }
+      ],
+      "Next": "MarkCompleted"
+    },
+    "Refund": {
+      "Comment": "Compensation: give the debited money back to the source account (idempotent step). Retried longer: it must not fail.",
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${saga_steps_function}",
+        "Payload": { "action": "refund", "transfer_id.$": "$.transfer_id" }
+      },
+      "ResultSelector": { "result.$": "$.Payload.result" },
+      "ResultPath": "$.refund",
+      "Retry": [
+        {
+          "ErrorEquals": ["TransientError", "Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"],
+          "IntervalSeconds": 2, "MaxAttempts": 8, "BackoffRate": 2, "MaxDelaySeconds": 60, "JitterStrategy": "FULL"
+        }
+      ],
+      "Catch": [
+        { "ErrorEquals": ["States.ALL"], "ResultPath": "$.refund_error", "Next": "InvariantBroken" }
+      ],
+      "Next": "MarkCompensated"
+    },
+    "MarkCompleted": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:updateItem",
+      "Parameters": {
+        "TableName": "${transfers_table}",
+        "Key": { "transfer_id": { "S.$": "$.transfer_id" } },
+        "UpdateExpression": "SET #status = :final, updated_at = :now",
+        "ConditionExpression": "(#status = :pending AND attribute_exists(credited_at)) OR #status = :final",
+        "ExpressionAttributeNames": { "#status": "status" },
+        "ExpressionAttributeValues": {
+          ":final": { "S": "COMPLETED" },
+          ":pending": { "S": "PENDING" },
+          ":now": { "S.$": "$$.State.EnteredTime" }
+        }
+      },
+      "ResultPath": null,
+      "Retry": [
+        { "ErrorEquals": ["DynamoDB.ProvisionedThroughputExceededException", "DynamoDB.ThrottlingException", "DynamoDB.InternalServerErrorException", "DynamoDB.TransactionConflictException"], "IntervalSeconds": 1, "MaxAttempts": 5, "BackoffRate": 2, "JitterStrategy": "FULL" }
+      ],
+      "End": true
+    },
+    "MarkRejected": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:updateItem",
+      "Parameters": {
+        "TableName": "${transfers_table}",
+        "Key": { "transfer_id": { "S.$": "$.transfer_id" } },
+        "UpdateExpression": "SET #status = :final, failure_reason = :reason, updated_at = :now",
+        "ConditionExpression": "(#status = :pending AND attribute_not_exists(debited_at)) OR #status = :final",
+        "ExpressionAttributeNames": { "#status": "status" },
+        "ExpressionAttributeValues": {
+          ":final": { "S": "REJECTED" },
+          ":pending": { "S": "PENDING" },
+          ":reason": { "S.$": "$.fraud.reason" },
+          ":now": { "S.$": "$$.State.EnteredTime" }
+        }
+      },
+      "ResultPath": null,
+      "Retry": [
+        { "ErrorEquals": ["DynamoDB.ProvisionedThroughputExceededException", "DynamoDB.ThrottlingException", "DynamoDB.InternalServerErrorException", "DynamoDB.TransactionConflictException"], "IntervalSeconds": 1, "MaxAttempts": 5, "BackoffRate": 2, "JitterStrategy": "FULL" }
+      ],
+      "End": true
+    },
+    "MarkFailed": {
+      "Comment": "No money moved: the fraud service stayed unavailable, or the debit was refused. Guard: never FAILED if the source was debited.",
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:updateItem",
+      "Parameters": {
+        "TableName": "${transfers_table}",
+        "Key": { "transfer_id": { "S.$": "$.transfer_id" } },
+        "UpdateExpression": "SET #status = :final, failure_reason = :reason, updated_at = :now",
+        "ConditionExpression": "(#status = :pending AND attribute_not_exists(debited_at)) OR #status = :final",
+        "ExpressionAttributeNames": { "#status": "status" },
+        "ExpressionAttributeValues": {
+          ":final": { "S": "FAILED" },
+          ":pending": { "S": "PENDING" },
+          ":reason": { "S.$": "$.error.Error" },
+          ":now": { "S.$": "$$.State.EnteredTime" }
+        }
+      },
+      "ResultPath": null,
+      "Retry": [
+        { "ErrorEquals": ["DynamoDB.ProvisionedThroughputExceededException", "DynamoDB.ThrottlingException", "DynamoDB.InternalServerErrorException", "DynamoDB.TransactionConflictException"], "IntervalSeconds": 1, "MaxAttempts": 5, "BackoffRate": 2, "JitterStrategy": "FULL" }
+      ],
+      "End": true
+    },
+    "MarkCompensated": {
+      "Comment": "The credit was refused: the source account was refunded.",
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:updateItem",
+      "Parameters": {
+        "TableName": "${transfers_table}",
+        "Key": { "transfer_id": { "S.$": "$.transfer_id" } },
+        "UpdateExpression": "SET #status = :final, failure_reason = :reason, updated_at = :now",
+        "ConditionExpression": "(#status = :pending AND attribute_exists(refunded_at)) OR #status = :final",
+        "ExpressionAttributeNames": { "#status": "status" },
+        "ExpressionAttributeValues": {
+          ":final": { "S": "COMPENSATED" },
+          ":pending": { "S": "PENDING" },
+          ":reason": { "S.$": "$.error.Error" },
+          ":now": { "S.$": "$$.State.EnteredTime" }
+        }
+      },
+      "ResultPath": null,
+      "Retry": [
+        { "ErrorEquals": ["DynamoDB.ProvisionedThroughputExceededException", "DynamoDB.ThrottlingException", "DynamoDB.InternalServerErrorException", "DynamoDB.TransactionConflictException"], "IntervalSeconds": 1, "MaxAttempts": 5, "BackoffRate": 2, "JitterStrategy": "FULL" }
+      ],
+      "End": true
+    },
+    "InvariantBroken": {
+      "Comment": "Should never happen. The transfer stays PENDING and the execution fails, to be investigated (alarm in phase 5).",
+      "Type": "Fail",
+      "Error": "InvariantBroken",
+      "Cause": "A Saga step was refused by its safety conditions, or the compensation failed after all retries."
+    }
+  }
+}

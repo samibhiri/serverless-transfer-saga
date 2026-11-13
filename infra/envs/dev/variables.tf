@@ -43,3 +43,20 @@ variable "api_throttling_burst_limit" {
   type        = number
   default     = 20
 }
+
+variable "fraud_check_failure_rate" {
+  description = "Probability (0 to 1) that the simulated fraud check fails with a temporary error."
+  type        = number
+  default     = 0.2
+
+  validation {
+    condition     = var.fraud_check_failure_rate >= 0 && var.fraud_check_failure_rate <= 1
+    error_message = "fraud_check_failure_rate must be between 0 and 1."
+  }
+}
+
+variable "fraud_check_rejection_threshold" {
+  description = "Transfers above this amount (in minor units) are rejected by the simulated fraud check."
+  type        = number
+  default     = 500000
+}
