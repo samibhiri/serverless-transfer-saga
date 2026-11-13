@@ -22,3 +22,8 @@ output "user_pool_client_id" {
   description = "ID of the Cognito app client used to sign in (public client, no secret)."
   value       = aws_cognito_user_pool_client.api.id
 }
+
+output "transfers_table_name" {
+  description = "Name of the DynamoDB table that stores the transfers."
+  value       = aws_dynamodb_table.transfers.name
+}

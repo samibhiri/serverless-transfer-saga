@@ -1,7 +1,7 @@
 name: Tests
 
-# Unit tests of the Lambda functions, on every pull request to main.
-# No AWS access: AWS services are mocked with moto.
+# Unit tests of every Lambda service (one folder per service under services/),
+# on every pull request to main. No AWS access: AWS services are mocked.
 on:
   pull_request:
     branches: [main]
@@ -15,11 +15,9 @@ concurrency:
 
 jobs:
   unit-tests:
+    # Single job name, required by the branch ruleset.
     name: Unit tests
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: services/accounts
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -29,10 +27,15 @@ jobs:
         with:
           python-version: "3.13"   # same version as the Lambda runtime
           cache: pip
-          cache-dependency-path: services/accounts/requirements-dev.txt
+          cache-dependency-path: services/*/requirements-dev.txt
 
-      - name: Install test dependencies
-        run: pip install -r requirements-dev.txt
-
-      - name: Run unit tests
-        run: python -m pytest -v
+      - name: Run the unit tests of every service
+        run: |
+          status=0
+          for service in services/*/; do
+            echo "::group::Unit tests: ${service}"
+            pip install -q -r "${service}requirements-dev.txt"
+            (cd "${service}" && python -m pytest -v) || status=1
+            echo "::endgroup::"
+          done
+          exit "$status"

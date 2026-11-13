@@ -109,7 +109,7 @@ flowchart LR
   - [x] Deployment and end-to-end tests ([`scripts/e2e-accounts.sh`](scripts/e2e-accounts.sh))
 - [ ] **Phase 2** — Transfer Saga with compensation (Step Functions), idempotency
   - [x] Design: Saga orchestration, asynchronous API, idempotency ([ADR-0008](docs/adr/0008-transfer-saga-orchestrated-with-step-functions.md))
-  - [ ] Transfers table and API (`POST` / `GET /transfers`), idempotency key
+  - [x] Transfers table and API code (`POST` / `GET /transfers`), idempotency key, unit tests
   - [ ] Saga steps: fraud check, debit, credit, compensation
   - [ ] Step Functions state machine
   - [ ] API routes, deployment and end-to-end tests of failure scenarios

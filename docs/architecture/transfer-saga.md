@@ -1,6 +1,14 @@
 # Transfer Saga
 
 > **Design of phase 2, being implemented.** This view describes the target design; it is updated as each part is built.
+>
+> | Part | Status |
+> |---|---|
+> | `transfers` table | built |
+> | Transfers API code (`services/transfers`), idempotency, unit tests | built |
+> | Saga steps: fraud check, debit, credit, refund | to do |
+> | Step Functions state machine | to do |
+> | API routes and Lambda function of the transfers API | to do |
 
 This view shows how a transfer between two accounts is processed.
 Decision: [ADR-0008](../adr/0008-transfer-saga-orchestrated-with-step-functions.md) (Saga orchestrated with Step Functions). Authentication and authorization follow [ADR-0006](../adr/0006-api-authentication-with-cognito.md) and [ADR-0007](../adr/0007-authorization-by-account-ownership.md).
@@ -154,3 +162,11 @@ sequenceDiagram
 |---|---|---|
 | `POST /transfers` | `202` with the transfer (new, or existing for the same idempotency key) | `400` invalid input or missing `Idempotency-Key`, `401` / `403` authentication, `404` source account not found or not owned, `422` key reused with a different payload, `429` throttled |
 | `GET /transfers/{transfer_id}` | `200` with the transfer and its status, if the caller owns it | `400` invalid id, `401` / `403` authentication, `404` unknown transfer or transfer of another user |
+
+## Implementation notes
+
+- **Idempotency key:** required header `Idempotency-Key` (case-insensitive name), 1 to 255 printable characters. `transfer_id = UUIDv5(project namespace, owner_id + ":" + key)`: two users can use the same key without collision.
+- **Replay:** a request with an already used key is compared on `source_account_id`, `target_account_id` and `amount`. Same values: `202` with the existing transfer. Different values: `422`.
+- **Self-healing start:** if a previous attempt recorded the transfer but failed to start the Saga, a replay with the same key starts it. The execution name (`transfer_id`) prevents a second execution.
+- **Race between two identical requests:** the conditional write lets only one of them create the transfer; the other one reads it back and answers as a replay.
+- **Checks before recording a transfer:** the caller owns the source account (`404` otherwise, same answer as an unknown account), the target account exists (`404`), both accounts have the same currency (`400`). The balance is **not** checked here: the debit step of the Saga does it atomically.
