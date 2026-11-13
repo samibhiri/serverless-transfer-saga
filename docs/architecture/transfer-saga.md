@@ -7,7 +7,7 @@
 > | `transfers` table | built |
 > | Transfers API code (`services/transfers`), idempotency, unit tests | built |
 > | Saga steps code (`services/saga_steps`) and fraud check service (`services/fraud_check`), unit tests | built |
-> | Step Functions state machine | to do |
+> | Step Functions state machine (`infra/envs/dev/statemachines/transfer-saga.asl.json`), Lambda functions of the steps | built |
 > | API routes and Lambda function of the transfers API | to do |
 
 This view shows how a transfer between two accounts is processed.
@@ -84,6 +84,25 @@ flowchart TB
 ```
 
 Transient errors (throttling, service errors, fraud service unavailable) are retried by Step Functions with exponential backoff and jitter. Business errors (fraud refused, insufficient funds) are not retried.
+
+### Implementation of the state machine
+
+| State | Type | Integration | On error |
+|---|---|---|---|
+| `LoadTransfer` | Task | DynamoDB `GetItem`, direct (no Lambda) | retried |
+| `FraudCheck` | Task | Lambda `fraud-check` | outages retried 4 times, then `MarkFailed` |
+| `FraudDecision` | Choice | — | `ACCEPTED` → `Debit`, otherwise `MarkRejected` |
+| `Debit` | Task | Lambda `saga-steps` | transient errors retried; `InsufficientFunds` → `MarkFailed`; anything else → `InvariantBroken` |
+| `Credit` | Task | Lambda `saga-steps` | transient errors retried; any refusal after retries → `Refund`; `StepNotAllowed` → `InvariantBroken` |
+| `Refund` | Task | Lambda `saga-steps` | retried up to 8 times (it must not fail); then `InvariantBroken` |
+| `MarkCompleted`, `MarkRejected`, `MarkFailed`, `MarkCompensated` | Task | DynamoDB `UpdateItem`, direct | retried on throttling |
+| `InvariantBroken` | Fail | — | the transfer stays `PENDING`; to be investigated |
+
+**Never guess the outcome of a debit.** If the debit fails for a technical reason after every retry (for example, the function times out), the money may or may not have moved. Recording `FAILED` could hide a debit; the execution stops in `InvariantBroken` instead, and the transfer stays `PENDING` until someone investigates. A CloudWatch alarm on failed executions is added in phase 5.
+
+**Final statuses are guarded by the step marks.** Each `Mark…` state only writes its status if the marks agree with it: `COMPLETED` requires `credited_at`, `COMPENSATED` requires `refunded_at`, `FAILED` and `REJECTED` require that no debit happened. A replayed `Mark…` state is accepted when the status is already the same.
+
+**Least privilege.** The state machine may invoke only the two Saga functions and read or update only the `transfers` table. The `saga-steps` function may read transfers and update accounts and transfers; the `fraud-check` function has no data access. Execution logs record errors only, without execution data, so that balances and identities stay out of the logs.
 
 ## Request flow: create a transfer
 

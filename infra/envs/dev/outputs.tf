@@ -27,3 +27,8 @@ output "transfers_table_name" {
   description = "Name of the DynamoDB table that stores the transfers."
   value       = aws_dynamodb_table.transfers.name
 }
+
+output "transfer_saga_state_machine_arn" {
+  description = "ARN of the transfer Saga state machine."
+  value       = aws_sfn_state_machine.transfer_saga.arn
+}
