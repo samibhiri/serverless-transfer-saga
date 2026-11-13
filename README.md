@@ -110,7 +110,7 @@ flowchart LR
 - [ ] **Phase 2** — Transfer Saga with compensation (Step Functions), idempotency
   - [x] Design: Saga orchestration, asynchronous API, idempotency ([ADR-0008](docs/adr/0008-transfer-saga-orchestrated-with-step-functions.md))
   - [x] Transfers table and API code (`POST` / `GET /transfers`), idempotency key, unit tests
-  - [ ] Saga steps: fraud check, debit, credit, compensation
+  - [x] Saga steps (debit, credit, refund) and simulated fraud check service, idempotent, unit tests
   - [ ] Step Functions state machine
   - [ ] API routes, deployment and end-to-end tests of failure scenarios
 - [ ] **Phase 3** — Event-driven communication (EventBridge, SQS, DLQ, outbox)
