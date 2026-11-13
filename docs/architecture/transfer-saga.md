@@ -8,7 +8,8 @@
 > | Transfers API code (`services/transfers`), idempotency, unit tests | built |
 > | Saga steps code (`services/saga_steps`) and fraud check service (`services/fraud_check`), unit tests | built |
 > | Step Functions state machine (`infra/envs/dev/statemachines/transfer-saga.asl.json`), Lambda functions of the steps | built |
-> | API routes and Lambda function of the transfers API | to do |
+> | API routes (`POST /transfers`, `GET /transfers/{transfer_id}`) and Lambda function of the transfers API | built |
+> | Deployment and end-to-end tests of the four outcomes | to do |
 
 This view shows how a transfer between two accounts is processed.
 Decision: [ADR-0008](../adr/0008-transfer-saga-orchestrated-with-step-functions.md) (Saga orchestrated with Step Functions). Authentication and authorization follow [ADR-0006](../adr/0006-api-authentication-with-cognito.md) and [ADR-0007](../adr/0007-authorization-by-account-ownership.md).
@@ -239,3 +240,4 @@ The history of each execution in Step Functions gives the detail of every step (
 - **Self-healing start:** if a previous attempt recorded the transfer but failed to start the Saga, a replay with the same key starts it. The execution name (`transfer_id`) prevents a second execution.
 - **Race between two identical requests:** the conditional write lets only one of them create the transfer; the other one reads it back and answers as a replay.
 - **Checks before recording a transfer:** the caller owns the source account (`404` otherwise, same answer as an unknown account), the target account exists (`404`), both accounts have the same currency (`400`). The balance is **not** checked here: the debit step of the Saga does it atomically.
+- **Least privilege of the transfers function:** read accounts (`GetItem`), read and create transfers (`GetItem`, `PutItem`), start the transfer Saga (`states:StartExecution` on this state machine only). It never moves money: only the Saga steps do.

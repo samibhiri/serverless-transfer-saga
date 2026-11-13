@@ -1,7 +1,9 @@
 # Public REST API of the project (ADR-0005).
 #
-#   POST /accounts                 -> accounts Lambda function
-#   GET  /accounts/{account_id}    -> accounts Lambda function
+#   POST /accounts                   -> accounts Lambda function
+#   GET  /accounts/{account_id}      -> accounts Lambda function
+#   POST /transfers                  -> transfers Lambda function
+#   GET  /transfers/{transfer_id}    -> transfers Lambda function
 #
 # Every method requires a valid Cognito ID token (ADR-0006).
 
@@ -97,6 +99,74 @@ resource "aws_lambda_permission" "api_get_account" {
   source_arn    = "${aws_api_gateway_rest_api.this.execution_arn}/*/GET/accounts/*"
 }
 
+# --- Transfers routes (ADR-0008) ------------------------------------------------------------
+
+resource "aws_api_gateway_resource" "transfers" {
+  rest_api_id = aws_api_gateway_rest_api.this.id
+  parent_id   = aws_api_gateway_rest_api.this.root_resource_id
+  path_part   = "transfers"
+}
+
+resource "aws_api_gateway_resource" "transfer" {
+  rest_api_id = aws_api_gateway_rest_api.this.id
+  parent_id   = aws_api_gateway_resource.transfers.id
+  path_part   = "{transfer_id}"
+}
+
+resource "aws_api_gateway_method" "create_transfer" {
+  rest_api_id   = aws_api_gateway_rest_api.this.id
+  resource_id   = aws_api_gateway_resource.transfers.id
+  http_method   = "POST"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
+}
+
+resource "aws_api_gateway_integration" "create_transfer" {
+  rest_api_id             = aws_api_gateway_rest_api.this.id
+  resource_id             = aws_api_gateway_resource.transfers.id
+  http_method             = aws_api_gateway_method.create_transfer.http_method
+  type                    = "AWS_PROXY"
+  integration_http_method = "POST"
+  uri                     = aws_lambda_function.transfers.invoke_arn
+}
+
+resource "aws_api_gateway_method" "get_transfer" {
+  rest_api_id   = aws_api_gateway_rest_api.this.id
+  resource_id   = aws_api_gateway_resource.transfer.id
+  http_method   = "GET"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
+
+  request_parameters = {
+    "method.request.path.transfer_id" = true
+  }
+}
+
+resource "aws_api_gateway_integration" "get_transfer" {
+  rest_api_id             = aws_api_gateway_rest_api.this.id
+  resource_id             = aws_api_gateway_resource.transfer.id
+  http_method             = aws_api_gateway_method.get_transfer.http_method
+  type                    = "AWS_PROXY"
+  integration_http_method = "POST"
+  uri                     = aws_lambda_function.transfers.invoke_arn
+}
+
+resource "aws_lambda_permission" "api_create_transfer" {
+  statement_id  = "AllowApiGatewayCreateTransfer"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.transfers.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_api_gateway_rest_api.this.execution_arn}/*/POST/transfers"
+}
+
+resource "aws_lambda_permission" "api_get_transfer" {
+  statement_id  = "AllowApiGatewayGetTransfer"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.transfers.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_api_gateway_rest_api.this.execution_arn}/*/GET/transfers/*"
+}
+
 # --- Deployment and stage -------------------------------------------------------------
 
 # A deployment is a snapshot of the API. A new one is created whenever a path,
@@ -113,6 +183,12 @@ resource "aws_api_gateway_deployment" "this" {
       aws_api_gateway_integration.create_account,
       aws_api_gateway_method.get_account,
       aws_api_gateway_integration.get_account,
+      aws_api_gateway_resource.transfers,
+      aws_api_gateway_resource.transfer,
+      aws_api_gateway_method.create_transfer,
+      aws_api_gateway_integration.create_transfer,
+      aws_api_gateway_method.get_transfer,
+      aws_api_gateway_integration.get_transfer,
     ]))
   }
 
